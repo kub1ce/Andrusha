@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <painlessMesh.h>
 #include <WiFi.h>
 #include <WebServer.h>
 
