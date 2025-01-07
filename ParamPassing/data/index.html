@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Color Picker</title>
+</head>
+<body>
+    <form id="colorForm" action="/submit-color" method="get">
+        <input type="color" id="colorPicker" name="color">
+        <button type="submit">Submit Color</button>
+    </form>
+
+    <script>
+        document.getElementById("colorForm").addEventListener("submit", function(event) {
+            event.preventDefault();
+            
+            var colorValue = document.getElementById("colorPicker").value;
+            var r = parseInt(colorValue.substr(1, 2), 16);
+            var g = parseInt(colorValue.substr(3, 2), 16);
+            var b = parseInt(colorValue.substr(5, 2), 16);
+
+            var url = "/submit-color?r=" + r + "&g=" + g + "&b=" + b;
+            window.location.href = url;
+        });
+    </script>
+</body>
+</html>
