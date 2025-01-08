@@ -102,13 +102,104 @@ void getID() {
 
 void registerDrone() {
 	// Реализация метода /register
-	server.send(200, "text/plain", "Data: id="+String(droneCount+1));
+
+	// Возвращаем ID дрона (количество подключенных +1)
+	droneCount++;
+	server.send(200, "text/plain", "Data: id="+String(droneCount));
 }
 
 
+String adminHtml() {
+	// Я не знаю как еще было записать HTML код.
+	// Файлы я не смог прочитать (около суток пытался это сделать)
+
+	String sh = "<!DOCTYPE HTML>";
+	sh += "<html>";
+	sh += "<head>";
+	sh += "<title>Admin panel</title>";
+	sh += "<meta charset=\"UTF-8\">"; // Очень важно. иначе Русские буквы превратятся в монстров
+	sh += "</head>";
+	sh += "<body>";
+	sh += "<h1>Admin panel</h1>";
+	sh += "<h3>Drone count: " + String(droneCount) + "</h3><hr>";
+
+	// Добавляем управление каждым дроном
+	for (int i = 0; i < droneCount; i++) {
+		sh += "<div><h4>Отправить команду дрону №"+String(i+1)+"</h4><input id='d"+String(i+1)+"' type='color'>";
+		sh += "<button onclick=\"window.location.href = location.protocol + '//' + location.host + '/cmnd?drone="+String(i+1);
+		sh += "&' + getColor('d"+String(i+1)+"')\">Submit</button></div><hr>";
+	}
+	
+	// Управление всеми дронами
+	sh += "<div><h4>Отправить команду всем дронам</h4><input id='d0' type='color'>";
+	sh += "<button onclick=\"window.location.href = location.protocol + '//' + location.host + '/cmnd?drone=0";
+	sh += "&' + getColor('d0')\">Submit</button></div><hr>";
+
+	sh += "</body>";
+
+	// Функция, которая конвертирует HEX значение выбора цвета в RGB
+	sh += "<script type=\"text/javascript\">";
+	sh += "function getColor(idd) {";
+	sh += "var el = document.getElementById(idd).value;";
+	sh += "return `r=${parseInt(el.substr(1,2), 16)}&g=${parseInt(el.substr(3,2), 16)}&b=${parseInt(el.substr(5,2), 16)}`";
+	sh += "}</script>";
+
+	sh += "</html>";
+
+	return sh;
+}
+
+void admin() {
+	// Отдача страницы админки
+    server.send(200, "text/html", adminHtml());
+}
+
+void cmnd() {
+	// Отдача команды одному или всему дрону
+
+    int droneId = server.arg("drone").toInt(); // ID дрона, которому передать команду. 0 - означает всем
+	String request = server.uri()+"?";
+
+	// Вывод аргументов по отдельности
+	// for (int i = 0; i < server.args(); i++){
+	// 	Serial.println(server.argName(i) + " = " + server.arg(i));
+	// 	request += server.argName(i) + "=" + server.arg(i) + "&";
+	// }
+	
+	// Сборка запроса, чтобы отправить его дальше
+	request = request.substring(0, request.length() - 1);
+	Serial.println("Request: " + request);
+    
+	// Если команда отправляется всем дронам (id = 0) или корректный ID дрона, выполняем её
+	if (droneId == 0 || droneId == ID) {
+		neopixelWrite(RGB_BUILTIN, server.arg("r").toInt(), server.arg("g").toInt(), server.arg("b").toInt());
+
+	    // Останавливаем цепь, если команда была конкретно этому дрону
+		if (droneId != 0){
+			admin();
+			return;
+		}
+	}
+
+    // Отправка команды последующим дронам
+	// Поиск следующего дрона (если есть дрон с ID+1)
+	char* ssid = strdup(("Drone-" + String(ID+1)).c_str()); 
+	if (serchWiFi(ssid)) {
+		// Дублируем запрос
+		WiFiClient wfc;
+		wfc.connect(strdup(("192.168.222." + String(11 + ID)).c_str()), 80);
+		wfc.println("GET "+request+" HTTP/1.1\r\nHost: 192.168.222.11\r\nUser-Agent: ESP32\r\nConnection: close\r\n\r\n");
+		wfc.stop();
+	}
+
+    admin();
+}
+
 void serverUp () {
-	// Запуск локального сервера на статичном IP
+	// Создание точки доступа
+
 	WiFi.softAP("Drone-"+String(ID));
+
 	IPAddress localIP(192,168,222,11);
 	IPAddress gw(192,168,222,11);
 	IPAddress mask(255,255,255,0);
@@ -123,7 +214,6 @@ void serverUp () {
     Serial.println("WiFi connected");
     Serial.println("IP address: ");
     Serial.println(WiFi.localIP());
-
 
   	server.begin();
 }
@@ -153,24 +243,20 @@ void setup() {
 		Serial.println("Новый Id устройства: "+String(ID));
 		Serial.println("Запуск WiFi с именем Drone-"+String(ID));
 		// Запуск WiFi
-		serverUp();		
+		serverUp();
+		server.on("/cmnd", cmnd);
+		neopixelWrite(RGB_BUILTIN, 8, 0, 8);
 	} else {
 		serverUp();
 		// Инициализация обработчиков GET запросов
 		server.on("/register", registerDrone);
+		server.on("/", admin);
+		server.on("/cmnd", cmnd);
+		neopixelWrite(RGB_BUILTIN, 8, 8, 8);
 	}
 
 }
 
 void loop() {
   	server.handleClient();
-
-	if (ID == 1) 
-		neopixelWrite(RGB_BUILTIN, 16, 16, 16);
-	else
-		neopixelWrite(RGB_BUILTIN, 4, 0, 4);
-
-	delay(240);
-	digitalWrite(RGB_BUILTIN, LOW);
-	delay(240);
 }
