@@ -160,11 +160,12 @@ void cmnd() {
     int droneId = server.arg("drone").toInt(); // ID дрона, которому передать команду. 0 - означает всем
 	String request = server.uri()+"?";
 
-	// Вывод аргументов по отдельности
-	// for (int i = 0; i < server.args(); i++){
-	// 	Serial.println(server.argName(i) + " = " + server.arg(i));
-	// 	request += server.argName(i) + "=" + server.arg(i) + "&";
-	// }
+	for (int i = 0; i < server.args(); i++){
+		// Вывод аргументов по отдельности
+		// Serial.println(server.argName(i) + " = " + server.arg(i));
+
+		request += server.argName(i) + "=" + server.arg(i) + "&";
+	}
 	
 	// Сборка запроса, чтобы отправить его дальше
 	request = request.substring(0, request.length() - 1);
@@ -172,6 +173,7 @@ void cmnd() {
     
 	// Если команда отправляется всем дронам (id = 0) или корректный ID дрона, выполняем её
 	if (droneId == 0 || droneId == ID) {
+		Serial.println("Выполнение команды.");
 		neopixelWrite(RGB_BUILTIN, server.arg("r").toInt(), server.arg("g").toInt(), server.arg("b").toInt());
 
 	    // Останавливаем цепь, если команда была конкретно этому дрону
@@ -185,11 +187,25 @@ void cmnd() {
 	// Поиск следующего дрона (если есть дрон с ID+1)
 	char* ssid = strdup(("Drone-" + String(ID+1)).c_str()); 
 	if (serchWiFi(ssid)) {
+
+		// Подключение к WiFi
+		Serial.println("Connecting");
+		WiFi.begin(ssid);
+		while (WiFi.status() != WL_CONNECTED){
+			Serial.print(".");
+			delay(500);
+		}
+		Serial.println("\nConacted!");
+
+
 		// Дублируем запрос
 		WiFiClient wfc;
 		wfc.connect(strdup(("192.168.222." + String(11 + ID)).c_str()), 80);
+		// wfc.connect("192.168.222.11", 80);
 		wfc.println("GET "+request+" HTTP/1.1\r\nHost: 192.168.222.11\r\nUser-Agent: ESP32\r\nConnection: close\r\n\r\n");
+		delay(500);
 		wfc.stop();
+		Serial.println("Request sent.");
 	}
 
     admin();
