@@ -17,16 +17,8 @@
     const button = document.querySelector('button');
     
     button.addEventListener('click', () => {
-        fetch('http://192.168.222.11/switch', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                led: true
-            })
-        })
-       .then(response => response.json())
+        fetch('http://192.168.222.11/switch')
+       .then(response => response.text())
     })
 </script>
 </html>
