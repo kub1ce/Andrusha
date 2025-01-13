@@ -1,4 +1,32 @@
-<!DOCTYPE HTNL>
+<!-- <!DOCTYPE HTNL>
 <html>
   <body><h1>Github Pages works!</h1></body>
+</html> -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Esp Control Test</title>
+</head>
+<body>
+    <h1>Switch LED</h1>
+    <button>CLICK</button>
+</body>
+<script type="text/javascript">
+    const button = document.querySelector('button');
+    
+    button.addEventListener('click', () => {
+        fetch('http://192.168.222.11/switch', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                led: true
+            })
+        })
+       .then(response => response.json())
+    })
+</script>
 </html>
