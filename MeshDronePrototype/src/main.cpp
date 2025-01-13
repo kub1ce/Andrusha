@@ -4,25 +4,8 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-/*
-	"+" - реализовано
-	"-" - планируется 
 
-
-	1. Поиск точки с именем Drone-1
-	+ Подключение к найденной точке
-	+ Запрос /register => получение ID
-	+ Запуск WiFi с именем Drone-ID ↑
-	
-	Если точки нет:
-		+ Запуск Wifi с именем Drone-1
-		+ реализация метода /register
-		- "админ панель"
-			- Отображение подключенных дронов
-			- Отдача команды одному
-			- Отдача всем сразу
-		- Отдача команд одному дрону или всем сразу
-*/
+#define isDebugMode false // Если true, то включается режим отладки. Чтобы плата начала работать - нужно отправить любое сообщение в Serial порт
 
 
 int ID = 1; // Номер дрона
@@ -30,14 +13,20 @@ int droneCount = 1; // Количество дронов. Необходимо �
 
 WebServer server(80);
 
+WiFiClient wfc;
+
 // =====
+
+String adminHtml();
 
 bool serchWiFi(char* ssid) {
 	// Поиск точки с именем
 	Serial.print(ssid);
 
+	// Сканирование доступных сетей. Занимает время..
 	int numNetworks = WiFi.scanNetworks();
 
+	// Поиск нужной сети с подходящем названием (ssid)
 	for (int i = 0; i < numNetworks; i++) {
 		if (WiFi.SSID(i) == ssid) {
             Serial.println(" found");
@@ -52,18 +41,19 @@ bool serchWiFi(char* ssid) {
 void parseArgumentsFromRespond(const String& header) {
 	// Парсинг ответа от сервера, получение и обновление ID
 
-    size_t dataIndex = header.indexOf("Data: id=");
+    size_t dataIndex = header.indexOf("Data: id="); // Ищем индекс необходимого заголовка в ответе
 	size_t idIndex = dataIndex + 9; // Длина "Data: id=" равна 8
-	String idStr = header.substring(idIndex);
+	String idStr = header.substring(idIndex); // Обрезаем строку так, чтобы осталось только число
 	int idEnd = idStr.toInt();
 	String idValue = idStr.substring(0, idEnd);
 
-	ID = idValue.toInt();
+	ID = idValue.toInt(); // Записываем новый ID
 }
 
 void getID() {
     // Запрос /register => получение ID
 
+	// Подключение к WiFi Drone-1
 	Serial.println("Drone-"+String(ID));
 	Serial.print("Connecting");
 	WiFi.begin("Drone-"+String(ID));
@@ -81,10 +71,11 @@ void getID() {
 
 
 	// Отправка GET-запроса на сервер
-	WiFiClient wfc;
+	// WiFiClient wfc;
 	wfc.connect("192.168.222.11", 80);
 	wfc.println("GET /register HTTP/1.1\r\nHost: 192.168.222.11\r\nUser-Agent: ESP32\r\nConnection: close\r\n\r\n");
-	
+
+	// Немного ждём, чтобы все пакеты успешно дошли
 	delay(500);
 	
 	// Чтение ответа
@@ -96,7 +87,10 @@ void getID() {
         }
     }
 
+	// Отключаемся от 1го дрона
 	wfc.stop();
+
+	// Парсим ответ и записываем новый ID
 	parseArgumentsFromRespond(response);
 }
 
@@ -104,10 +98,10 @@ void registerDrone() {
 	// Реализация метода /register
 
 	// Возвращаем ID дрона (количество подключенных +1)
+	Serial.println("Регистрация нового дрона");
 	droneCount++;
 	server.send(200, "text/plain", "Data: id="+String(droneCount));
 }
-
 
 String adminHtml() {
 	// Я не знаю как еще было записать HTML код.
@@ -119,21 +113,27 @@ String adminHtml() {
 	sh += "<title>Admin panel</title>";
 	sh += "<meta charset=\"UTF-8\">"; // Очень важно. иначе Русские буквы превратятся в монстров
 	sh += "</head>";
-	sh += "<body>";
-	sh += "<h1>Admin panel</h1>";
+	sh += "<body style='font-family: monospace;'>"; // шрифт по вкусу
+	sh += "<h1><a href='/'>Admin panel</a></h1>";
+	// sh += "<h4><a href='/updateConnection'>Update Connection</a></h4>";
 	sh += "<h3>Drone count: " + String(droneCount) + "</h3><hr>";
 
 	// Добавляем управление каждым дроном
 	for (int i = 0; i < droneCount; i++) {
 		sh += "<div><h4>Отправить команду дрону №"+String(i+1)+"</h4><input id='d"+String(i+1)+"' type='color'>";
 		sh += "<button onclick=\"window.location.href = location.protocol + '//' + location.host + '/cmnd?drone="+String(i+1);
-		sh += "&' + getColor('d"+String(i+1)+"')\">Submit</button></div><hr>";
+		sh += "&' + getColor('d"+String(i+1)+"')\">Submit</button></div>";
+
+		if (i+1 == droneCount)
+			sh += "<hr style='border-color: orangered'>";
+		else
+			sh += "<hr>";
 	}
 	
 	// Управление всеми дронами
 	sh += "<div><h4>Отправить команду всем дронам</h4><input id='d0' type='color'>";
 	sh += "<button onclick=\"window.location.href = location.protocol + '//' + location.host + '/cmnd?drone=0";
-	sh += "&' + getColor('d0')\">Submit</button></div><hr>";
+	sh += "&' + getColor('d0')\">Submit</button></div>";
 
 	sh += "</body>";
 
@@ -155,60 +155,68 @@ void admin() {
 }
 
 void cmnd() {
-	// Отдача команды одному или всему дрону
+	// Отдача команды одному дрону или всем сразу
 
     int droneId = server.arg("drone").toInt(); // ID дрона, которому передать команду. 0 - означает всем
-	String request = server.uri()+"?";
 
+	// Сборка запроса, чтобы отправить его дальше
+	String request = server.uri()+"?";
 	for (int i = 0; i < server.args(); i++){
 		// Вывод аргументов по отдельности
-		// Serial.println(server.argName(i) + " = " + server.arg(i));
+		if (isDebugMode) Serial.println(server.argName(i) + " = " + server.arg(i));
 
 		request += server.argName(i) + "=" + server.arg(i) + "&";
 	}
-	
-	// Сборка запроса, чтобы отправить его дальше
 	request = request.substring(0, request.length() - 1);
-	Serial.println("Request: " + request);
+
+	if (isDebugMode) Serial.println("Request: " + request);
     
 	// Если команда отправляется всем дронам (id = 0) или корректный ID дрона, выполняем её
 	if (droneId == 0 || droneId == ID) {
 		Serial.println("Выполнение команды.");
-		neopixelWrite(RGB_BUILTIN, server.arg("r").toInt(), server.arg("g").toInt(), server.arg("b").toInt());
+		if (server.arg("r").toInt() == 0 && server.arg("g").toInt() == 0 && server.arg("b").toInt() == 0)
+			digitalWrite(RGB_BUILTIN, LOW);
+		else	
+			neopixelWrite(RGB_BUILTIN, server.arg("r").toInt(), server.arg("g").toInt(), server.arg("b").toInt());
 
 	    // Останавливаем цепь, если команда была конкретно этому дрону
 		if (droneId != 0){
-			admin();
+			ID == 1 ? admin() : server.send(200);
 			return;
 		}
 	}
 
-    // Отправка команды последующим дронам
-	// Поиск следующего дрона (если есть дрон с ID+1)
-	char* ssid = strdup(("Drone-" + String(ID+1)).c_str()); 
-	if (serchWiFi(ssid)) {
-
-		// Подключение к WiFi
-		Serial.println("Connecting");
-		WiFi.begin(ssid);
-		while (WiFi.status() != WL_CONNECTED){
-			Serial.print(".");
-			delay(500);
+	// Проверка подключения к следующему дрону
+	if (WiFi.status() != WL_CONNECTED){
+		// Реконнект, если WiFi не подключен
+		Serial.println("Reconnecting.");
+		char* ssid = strdup(("Drone-" + String(ID+1)).c_str()); 
+		if (serchWiFi(ssid)) {
+			Serial.println("Connecting");
+			WiFi.begin(ssid);
+			while (WiFi.status() != WL_CONNECTED){
+				Serial.print(".");
+				delay(500);
+			}
+			Serial.println("\nConected!");
+		} else {
+			Serial.println("Drone not found!");
+            return;
 		}
-		Serial.println("\nConacted!");
-
-
-		// Дублируем запрос
-		WiFiClient wfc;
-		wfc.connect(strdup(("192.168.222." + String(11 + ID)).c_str()), 80);
-		// wfc.connect("192.168.222.11", 80);
-		wfc.println("GET "+request+" HTTP/1.1\r\nHost: 192.168.222.11\r\nUser-Agent: ESP32\r\nConnection: close\r\n\r\n");
-		delay(500);
-		wfc.stop();
-		Serial.println("Request sent.");
+	} else {
+		if (isDebugMode) Serial.println("Already connected to " + WiFi.SSID());
 	}
 
-    admin();
+
+    // Отправка команды последующим дронам
+	// Дублируем запрос
+	wfc.connect(strdup(("192.168.222." + String(11 + ID)).c_str()), 80);
+	wfc.println("GET "+request+" HTTP/1.1\r\nHost: 192.168.222.11\r\nUser-Agent: ESP32\r\nConnection: close\r\n\r\n");
+	Serial.println("Request sent.");
+
+    // Возврат ответа
+	ID==1 ? admin() : server.send(200);
+
 }
 
 void serverUp () {
@@ -238,6 +246,12 @@ void setup() {
 	// Setup configuration
 	Serial.begin(115200);
 
+	if (isDebugMode){
+		// Отложенный запуск. см комментарий к isDebugMode
+		while (!Serial.available()) { }
+		Serial.println(">>> " + Serial.readString());
+	}
+
 	// * 1. Поиск точки с именем Drone-1
 
 	char* ssid = (char*)"Drone-1";
@@ -260,16 +274,16 @@ void setup() {
 		Serial.println("Запуск WiFi с именем Drone-"+String(ID));
 		// Запуск WiFi
 		serverUp();
-		server.on("/cmnd", cmnd);
 		neopixelWrite(RGB_BUILTIN, 8, 0, 8);
 	} else {
 		serverUp();
 		// Инициализация обработчиков GET запросов
 		server.on("/register", registerDrone);
 		server.on("/", admin);
-		server.on("/cmnd", cmnd);
 		neopixelWrite(RGB_BUILTIN, 8, 8, 8);
 	}
+
+	server.on("/cmnd", cmnd);
 
 }
 
