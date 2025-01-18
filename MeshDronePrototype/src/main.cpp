@@ -116,7 +116,7 @@ String adminHtml() {
 	sh += "<body style='font-family: monospace;'>"; // шрифт по вкусу
 	sh += "<h1><a href='/'>Admin panel</a></h1>";
 	// sh += "<h4><a href='/updateConnection'>Update Connection</a></h4>";
-	sh += "<h3>Drone count: " + String(droneCount) + "</h3><hr>";
+	sh += "<h3>Drone count: <b id='droneCount'>" + String(droneCount) + "</b></h3><hr>";
 
 	// Добавляем управление каждым дроном
 	for (int i = 0; i < droneCount; i++) {
@@ -143,6 +143,17 @@ String adminHtml() {
 	sh += "var el = document.getElementById(idd).value;";
 	sh += "return `r=${parseInt(el.substr(1,2), 16)}&g=${parseInt(el.substr(3,2), 16)}&b=${parseInt(el.substr(5,2), 16)}`";
 	sh += "}</script>";
+
+	// Функция, которая обновляет значение DroneCount
+	sh += "<script type=\"text/javascript\">";
+	sh += "function updateDroneCount() {";
+	sh += "var el = document.getElementById('droneCount')";
+	sh += "fetch('/droneCount')";
+	sh += ".then(responce => responce.text())";
+	sh += ".then(data => {el.innerText == data ? {} : el.innerText = data, el.style.color = 'red'})";
+	sh += "}";
+	sh += "setInterval(updateDroneCount, 1000);";
+    sh += "</script>";
 
 	sh += "</html>";
 
@@ -219,6 +230,14 @@ void cmnd() {
 
 }
 
+// ? New
+
+void handleDroneCount() {
+	server.send(200, "text/plain", String(droneCount));
+}
+
+// ? New
+
 void serverUp () {
 	// Создание точки доступа
 
@@ -239,15 +258,31 @@ void serverUp () {
     Serial.println("IP address: ");
     Serial.println(WiFi.localIP());
 
+	// Иногда IP может быть неверным => другая плата не сможет подключиться, чтобы передать команду
+	// Если светодиод будет мигать красным цветом, то значит - это произошло( 
+	// В таком случае следует повторно перезапустить все платы выжидая более длительное время между подключениями
+
+	// if (String(WiFi.localIP()) != ("192.168.222." + String(11 + ID - 1))) {
+	// 	while (true)
+	// 	{
+	// 		neopixelWrite(RGB_BUILTIN, 8, 0, 0);
+	// 		delay(240);
+	// 		digitalWrite(RGB_BUILTIN, LOW);
+	// 		delay(240);
+	// 	}
+		
+	// }
+
   	server.begin();
 }
 
 void setup() {
 	// Setup configuration
 	Serial.begin(115200);
+	digitalWrite(RGB_BUILTIN, LOW);
 
 	if (isDebugMode){
-		// Отложенный запуск. см комментарий к isDebugMode
+		// ! Отложенный запуск. см комментарий к isDebugMode
 		while (!Serial.available()) { }
 		Serial.println(">>> " + Serial.readString());
 	}
@@ -280,6 +315,7 @@ void setup() {
 		// Инициализация обработчиков GET запросов
 		server.on("/register", registerDrone);
 		server.on("/", admin);
+		server.on("/droneCount", HTTP_GET, handleDroneCount);
 		neopixelWrite(RGB_BUILTIN, 8, 8, 8);
 	}
 
